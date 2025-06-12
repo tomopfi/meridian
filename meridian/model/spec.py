@@ -77,6 +77,16 @@ class ModelSpec:
     unique_sigma_for_each_geo: A boolean indicating whether to use a unique
       residual variance for each geo. If `False`, then a single residual
       variance is used for all geos. Default: `False`.
+    carryover_transform_type: A string to specify the type of carryover
+      transformation. Allowed values: `'adstock'`, `'geometric'`. Default:
+      `'adstock'`.
+    carryover_max_lag: An integer indicating the maximum number of lag periods
+      (≥ `0`) to include in the carryover calculation. Can also be set to
+      `None`, which is equivalent to infinite max lag. Only used if
+      `carryover_transform_type` is `'adstock'`. Default: `8`.
+    carryover_decay_rate: A float between 0 and 1 indicating the decay rate for
+      geometric carryover. Only used if `carryover_transform_type` is
+      `'geometric'`. Default: `0.5`.
     media_prior_type: A string to specify the prior type for the media
       coefficients. Allowed values: `'roi'`, `'mroi'`, `'contribution'`,
       `'coefficient'`. The `PriorDistribution` contains `roi_m`, `mroi_m`,
@@ -211,6 +221,9 @@ class ModelSpec:
   hill_before_adstock: bool = False
   max_lag: int | None = 8
   unique_sigma_for_each_geo: bool = False
+  carryover_transform_type: str = constants.CARRYOVER_TRANSFORM_ADSTOCK
+  carryover_max_lag: int | None = 8
+  carryover_decay_rate: float = 0.5
   media_prior_type: str | None = None
   rf_prior_type: str | None = None
   paid_media_prior_type: str | None = None
@@ -311,6 +324,42 @@ class ModelSpec:
       raise ValueError("The `knots` parameter cannot be an empty list.")
     if isinstance(self.knots, int) and self.knots == 0:
       raise ValueError("The `knots` parameter cannot be zero.")
+
+    # Validate carryover_transform_type.
+    if self.carryover_transform_type not in constants.CARRYOVER_TRANSFORM_TYPES:
+      raise ValueError(
+          f"The `carryover_transform_type` parameter '{self.carryover_transform_type}'"
+          f" must be one of {sorted(constants.CARRYOVER_TRANSFORM_TYPES)}."
+      )
+    # Validate carryover_max_lag.
+    if self.carryover_transform_type == constants.CARRYOVER_TRANSFORM_ADSTOCK:
+      if not (
+          isinstance(self.carryover_max_lag, int) and self.carryover_max_lag >= 0
+      ) and self.carryover_max_lag is not None:
+        raise ValueError(
+            "The `carryover_max_lag` parameter must be a non-negative integer"
+            " or `None` when `carryover_transform_type` is 'adstock'."
+        )
+    elif self.carryover_max_lag != 8:  # Default value
+      warnings.warn(
+          "`carryover_max_lag` is only used when `carryover_transform_type` is"
+          " 'adstock'. It will be ignored."
+      )
+    # Validate carryover_decay_rate.
+    if self.carryover_transform_type == constants.CARRYOVER_TRANSFORM_GEOMETRIC:
+      if not (
+          isinstance(self.carryover_decay_rate, float)
+          and 0.0 <= self.carryover_decay_rate <= 1.0
+      ):
+        raise ValueError(
+            "The `carryover_decay_rate` parameter must be a float between 0.0"
+            " and 1.0 when `carryover_transform_type` is 'geometric'."
+        )
+    elif self.carryover_decay_rate != 0.5:  # Default value
+      warnings.warn(
+          "`carryover_decay_rate` is only used when `carryover_transform_type`"
+          " is 'geometric'. It will be ignored."
+      )
 
   @property
   def effective_media_prior_type(self) -> str:

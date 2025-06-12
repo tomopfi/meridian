@@ -21,6 +21,8 @@ __all__ = [
     'AdstockHillTransformer',
     'AdstockTransformer',
     'HillTransformer',
+    'carryover_adstock',
+    'carryover_geometric',
 ]
 
 
@@ -234,3 +236,120 @@ class HillTransformer(AdstockHillTransformer):
       representing Hill-transformed media.
     """
     return _hill(media=media, ec=self._ec, slope=self._slope)
+
+def carryover_adstock(
+    media: tf.Tensor,
+    alpha: tf.Tensor,
+    max_lag: int | None,
+) -> tf.Tensor:
+  """Computes the Adstock carryover effect.
+
+  This function is similar to `_adstock` but is intended for carryover effects
+  and uses the `max_lag` from `carryover_max_lag` spec.
+
+  Args:
+    media: Tensor of media values with dimensions `[..., n_geos,
+      n_media_times, n_media_channels]`.
+    alpha: Tensor of `alpha` parameters for Adstock.
+    max_lag: Integer indicating the maximum number of lag periods (>= 0) to
+      include in the Adstock calculation. If None, it's equivalent to
+      infinite max lag.
+
+  Returns:
+    Tensor with dimensions `[..., n_geos, n_times_output, n_media_channels]`
+    representing Adstock carryover transformed media.
+  """
+  n_media_times = media.shape[-2]
+  # If max_lag is None (infinite), set it to n_media_times - 1 for practical purposes.
+  # This means the carryover can extend back to the beginning of the data.
+  effective_max_lag = max_lag if max_lag is not None else n_media_times -1
+
+  # For carryover, the number of output times is the same as input times.
+  return _adstock(
+      media=media,
+      alpha=alpha,
+      max_lag=effective_max_lag,
+      n_times_output=n_media_times,
+  )
+
+def carryover_geometric(
+    media: tf.Tensor,
+    decay_rate: float,
+) -> tf.Tensor:
+  """Computes the geometric carryover effect.
+
+  Args:
+    media: Tensor of media values with dimensions `[..., n_geos,
+      n_media_times, n_media_channels]`.
+    decay_rate: Float between 0 and 1 indicating the decay rate.
+
+  Returns:
+    Tensor with dimensions `[..., n_geos, n_media_times, n_media_channels]`
+    representing geometric carryover transformed media.
+  """
+  if not (0.0 <= decay_rate <= 1.0):
+    raise ValueError("`decay_rate` must be between 0.0 and 1.0.")
+
+  # Geometric carryover can be implemented using tf.scan
+  # The formula is: y[t] = media[t] + decay_rate * y[t-1]
+  # For tf.scan, we need to define a function that takes (previous_output, current_input)
+  # and returns new_output.
+  # The inputs are iterated along the time dimension (axis=-2 for media).
+
+  # To handle batch dimensions and geo dimensions correctly, we might need to
+  # transpose and then transpose back, or use map_fn if scan is tricky with multiple batch dims.
+  # For simplicity, let's assume media is [n_geos, n_media_times, n_channels]
+  # or [n_batch, n_geos, n_media_times, n_channels]
+
+  original_shape = tf.shape(media)
+  # Reshape to [n_batch * n_geos * n_channels, n_media_times] for scan
+  # This simplifies scan operation over time for each series independently.
+  if len(media.shape) == 4: # batch, geo, time, channel
+    num_batch, num_geos, num_times, num_channels = media.shape
+    # Transpose to [time, batch, geo, channel] then reshape
+    media_transposed = tf.transpose(media, perm=[2, 0, 1, 3])
+    media_reshaped = tf.reshape(media_transposed, [num_times, num_batch * num_geos * num_channels])
+  elif len(media.shape) == 3: # geo, time, channel
+    num_geos, num_times, num_channels = media.shape
+    media_transposed = tf.transpose(media, perm=[1, 0, 2]) # [time, geo, channel]
+    media_reshaped = tf.reshape(media_transposed, [num_times, num_geos * num_channels])
+  else: # Assume [time, channels] or similar, needs specific handling or error
+    raise ValueError(f"Unsupported media shape for geometric carryover: {media.shape}")
+
+
+  def scan_fn(previous_carryover, current_media_slice):
+    # previous_carryover is the carryover from t-1
+    # current_media_slice is media[t]
+    # new_carryover = current_media_slice + decay_rate * previous_carryover
+    return current_media_slice + decay_rate * previous_carryover
+
+  # Initializer for scan: zero tensor with shape of a single time slice of media_reshaped
+  # media_reshaped has shape [num_times, num_series]
+  # initializer should have shape [num_series]
+  initializer = tf.zeros_like(media_reshaped[0])
+
+  # Apply scan along the time dimension (axis 0 of media_reshaped)
+  carryover_transformed_reshaped = tf.scan(
+      fn=scan_fn,
+      elems=media_reshaped,
+      initializer=initializer
+  )
+
+  # Reshape back to original structure
+  if len(media.shape) == 4:
+    # Reshape from [num_times, num_batch * num_geos * num_channels]
+    # to [num_times, num_batch, num_geos, num_channels]
+    carryover_transformed_transposed = tf.reshape(carryover_transformed_reshaped, [num_times, num_batch, num_geos, num_channels])
+    # Transpose back to [num_batch, num_geos, num_times, num_channels]
+    carryover_transformed = tf.transpose(carryover_transformed_transposed, perm=[1, 2, 0, 3])
+  elif len(media.shape) == 3:
+    # Reshape from [num_times, num_geos * num_channels]
+    # to [num_times, num_geos, num_channels]
+    carryover_transformed_transposed = tf.reshape(carryover_transformed_reshaped, [num_times, num_geos, num_channels])
+    # Transpose back to [num_geos, num_times, num_channels]
+    carryover_transformed = tf.transpose(carryover_transformed_transposed, perm=[1, 0, 2])
+  else:
+    # This case should not be reached due to earlier check
+    carryover_transformed = carryover_transformed_reshaped # Or error
+
+  return tf.ensure_shape(carryover_transformed, media.shape)

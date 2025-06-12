@@ -184,6 +184,11 @@ MEDIA_EFFECTS_DISTRIBUTIONS = frozenset(
 
 # Model spec variables.
 PRIOR = 'prior'
+CARRYOVER_TRANSFORM_ADSTOCK = 'adstock'
+CARRYOVER_TRANSFORM_GEOMETRIC = 'geometric'
+CARRYOVER_TRANSFORM_TYPES = frozenset(
+    {CARRYOVER_TRANSFORM_ADSTOCK, CARRYOVER_TRANSFORM_GEOMETRIC}
+)
 MEDIA_EFFECTS_DIST = 'media_effects_dist'
 HILL_BEFORE_ADSTOCK = 'hill_before_adstock'
 ADSTOCK_MEMORY_OPTIMIZED = 'adstock_memory_optimized'

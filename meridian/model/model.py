@@ -1120,8 +1120,25 @@ class Meridian:
     """
     if self.media_tensors.prior_media_scaled_counterfactual is None:
       return media_transformed
+
+    # Apply carryover to the counterfactual media before adstock/hill
+    if self.model_spec.carryover_transform_type == constants.CARRYOVER_TRANSFORM_ADSTOCK:
+      counterfactual_media_with_carryover = adstock_hill.carryover_adstock(
+          self.media_tensors.prior_media_scaled_counterfactual,
+          # Assuming alpha_m can be used for carryover adstock, or a new param is needed
+          alpha_m,
+          self.model_spec.carryover_max_lag
+      )
+    elif self.model_spec.carryover_transform_type == constants.CARRYOVER_TRANSFORM_GEOMETRIC:
+      counterfactual_media_with_carryover = adstock_hill.carryover_geometric(
+          self.media_tensors.prior_media_scaled_counterfactual,
+          self.model_spec.carryover_decay_rate
+      )
+    else:
+      counterfactual_media_with_carryover = self.media_tensors.prior_media_scaled_counterfactual
+
     media_transformed_counterfactual = self.adstock_hill_media(
-        self.media_tensors.prior_media_scaled_counterfactual,
+        counterfactual_media_with_carryover, # Use media with carryover
         alpha_m,
         ec_m,
         slope_m,
@@ -1160,8 +1177,25 @@ class Meridian:
     """
     if self.rf_tensors.prior_reach_scaled_counterfactual is None:
       return rf_transformed
+
+    # Apply carryover to the counterfactual reach before adstock/hill
+    if self.model_spec.carryover_transform_type == constants.CARRYOVER_TRANSFORM_ADSTOCK:
+      counterfactual_reach_with_carryover = adstock_hill.carryover_adstock(
+          self.rf_tensors.prior_reach_scaled_counterfactual,
+          # Assuming alpha_rf can be used for carryover adstock, or a new param is needed
+          alpha_rf,
+          self.model_spec.carryover_max_lag
+      )
+    elif self.model_spec.carryover_transform_type == constants.CARRYOVER_TRANSFORM_GEOMETRIC:
+      counterfactual_reach_with_carryover = adstock_hill.carryover_geometric(
+          self.rf_tensors.prior_reach_scaled_counterfactual,
+          self.model_spec.carryover_decay_rate
+      )
+    else:
+      counterfactual_reach_with_carryover = self.rf_tensors.prior_reach_scaled_counterfactual
+
     rf_transformed_counterfactual = self.adstock_hill_rf(
-        reach=self.rf_tensors.prior_reach_scaled_counterfactual,
+        reach=counterfactual_reach_with_carryover, # Use reach with carryover
         frequency=self.rf_tensors.frequency,
         alpha=alpha_rf,
         ec=ec_rf,
@@ -1305,6 +1339,19 @@ class Meridian:
     media_out = media
     for transformer in transformers_list:
       media_out = transformer.forward(media_out)
+
+    # Apply carryover transformation after adstock and hill
+    if self.model_spec.carryover_transform_type == constants.CARRYOVER_TRANSFORM_ADSTOCK:
+      # Assuming alpha can be reused or a new carryover_alpha parameter is introduced
+      media_out = adstock_hill.carryover_adstock(
+          media_out, alpha, self.model_spec.carryover_max_lag
+      )
+    elif self.model_spec.carryover_transform_type == constants.CARRYOVER_TRANSFORM_GEOMETRIC:
+      media_out = adstock_hill.carryover_geometric(
+          media_out, self.model_spec.carryover_decay_rate
+      )
+    # If no carryover or other type, media_out remains as is from adstock/hill
+
     return media_out
 
   def adstock_hill_rf(
@@ -1352,7 +1399,21 @@ class Meridian:
         n_times_output=n_times_output,
     )
     adj_frequency = hill_transformer.forward(frequency)
-    rf_out = adstock_transformer.forward(reach * adj_frequency)
+    rf_transformed = adstock_transformer.forward(reach * adj_frequency)
+
+    # Apply carryover transformation after adstock and hill for RF
+    if self.model_spec.carryover_transform_type == constants.CARRYOVER_TRANSFORM_ADSTOCK:
+      # Assuming alpha can be reused or a new carryover_alpha parameter is introduced
+      rf_out = adstock_hill.carryover_adstock(
+          rf_transformed, alpha, self.model_spec.carryover_max_lag
+      )
+    elif self.model_spec.carryover_transform_type == constants.CARRYOVER_TRANSFORM_GEOMETRIC:
+      rf_out = adstock_hill.carryover_geometric(
+          rf_transformed, self.model_spec.carryover_decay_rate
+      )
+    else:
+      # If no carryover or other type, rf_out remains as is from adstock/hill
+      rf_out = rf_transformed
 
     return rf_out
 
