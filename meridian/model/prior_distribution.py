@@ -404,6 +404,47 @@ class PriorDistribution:
           0.7, 0.4, name=constants.SLOPE_ORF
       ),
   )
+  # New adstock parameters with peak delay support
+  peak_delay_m: tfp.distributions.Distribution = dataclasses.field(
+      default_factory=lambda: tfp.distributions.HalfNormal(
+          2.0, name=constants.PEAK_DELAY_M
+      ),
+  )
+  exponent_m: tfp.distributions.Distribution = dataclasses.field(
+      default_factory=lambda: tfp.distributions.HalfNormal(
+          1.0, name=constants.EXPONENT_M
+      ),
+  )
+  peak_delay_rf: tfp.distributions.Distribution = dataclasses.field(
+      default_factory=lambda: tfp.distributions.HalfNormal(
+          2.0, name=constants.PEAK_DELAY_RF
+      ),
+  )
+  exponent_rf: tfp.distributions.Distribution = dataclasses.field(
+      default_factory=lambda: tfp.distributions.HalfNormal(
+          1.0, name=constants.EXPONENT_RF
+      ),
+  )
+  peak_delay_om: tfp.distributions.Distribution = dataclasses.field(
+      default_factory=lambda: tfp.distributions.HalfNormal(
+          2.0, name=constants.PEAK_DELAY_OM
+      ),
+  )
+  exponent_om: tfp.distributions.Distribution = dataclasses.field(
+      default_factory=lambda: tfp.distributions.HalfNormal(
+          1.0, name=constants.EXPONENT_OM
+      ),
+  )
+  peak_delay_orf: tfp.distributions.Distribution = dataclasses.field(
+      default_factory=lambda: tfp.distributions.HalfNormal(
+          2.0, name=constants.PEAK_DELAY_ORF
+      ),
+  )
+  exponent_orf: tfp.distributions.Distribution = dataclasses.field(
+      default_factory=lambda: tfp.distributions.HalfNormal(
+          1.0, name=constants.EXPONENT_ORF
+      ),
+  )
   sigma: tfp.distributions.Distribution = dataclasses.field(
       default_factory=lambda: tfp.distributions.HalfNormal(
           5.0, name=constants.SIGMA
@@ -569,6 +610,8 @@ class PriorDistribution:
     _validate_media_custom_priors(self.alpha_m)
     _validate_media_custom_priors(self.ec_m)
     _validate_media_custom_priors(self.slope_m)
+    _validate_media_custom_priors(self.peak_delay_m)  # Added
+    _validate_media_custom_priors(self.exponent_m)    # Added
     _validate_media_custom_priors(self.eta_m)
     _validate_media_custom_priors(self.beta_m)
 
@@ -591,6 +634,8 @@ class PriorDistribution:
     _validate_organic_media_custom_priors(self.alpha_om)
     _validate_organic_media_custom_priors(self.ec_om)
     _validate_organic_media_custom_priors(self.slope_om)
+    _validate_organic_media_custom_priors(self.peak_delay_om)  # Added
+    _validate_organic_media_custom_priors(self.exponent_om)    # Added
     _validate_organic_media_custom_priors(self.eta_om)
     _validate_organic_media_custom_priors(self.beta_om)
 
@@ -613,6 +658,8 @@ class PriorDistribution:
     _validate_organic_rf_custom_priors(self.alpha_orf)
     _validate_organic_rf_custom_priors(self.ec_orf)
     _validate_organic_rf_custom_priors(self.slope_orf)
+    _validate_organic_rf_custom_priors(self.peak_delay_orf)  # Added
+    _validate_organic_rf_custom_priors(self.exponent_orf)    # Added
     _validate_organic_rf_custom_priors(self.eta_orf)
     _validate_organic_rf_custom_priors(self.beta_orf)
 
@@ -633,6 +680,8 @@ class PriorDistribution:
     _validate_rf_custom_priors(self.alpha_rf)
     _validate_rf_custom_priors(self.ec_rf)
     _validate_rf_custom_priors(self.slope_rf)
+    _validate_rf_custom_priors(self.peak_delay_rf)  # Added
+    _validate_rf_custom_priors(self.exponent_rf)    # Added
     _validate_rf_custom_priors(self.eta_rf)
     _validate_rf_custom_priors(self.beta_rf)
 
@@ -801,6 +850,31 @@ class PriorDistribution:
     slope_orf = tfp.distributions.BatchBroadcast(
         self.slope_orf, n_organic_rf_channels, name=constants.SLOPE_ORF
     )
+    # Broadcast new adstock parameters
+    peak_delay_m = tfp.distributions.BatchBroadcast(
+        self.peak_delay_m, n_media_channels, name=constants.PEAK_DELAY_M
+    )
+    exponent_m = tfp.distributions.BatchBroadcast(
+        self.exponent_m, n_media_channels, name=constants.EXPONENT_M
+    )
+    peak_delay_rf = tfp.distributions.BatchBroadcast(
+        self.peak_delay_rf, n_rf_channels, name=constants.PEAK_DELAY_RF
+    )
+    exponent_rf = tfp.distributions.BatchBroadcast(
+        self.exponent_rf, n_rf_channels, name=constants.EXPONENT_RF
+    )
+    peak_delay_om = tfp.distributions.BatchBroadcast(
+        self.peak_delay_om, n_organic_media_channels, name=constants.PEAK_DELAY_OM
+    )
+    exponent_om = tfp.distributions.BatchBroadcast(
+        self.exponent_om, n_organic_media_channels, name=constants.EXPONENT_OM
+    )
+    peak_delay_orf = tfp.distributions.BatchBroadcast(
+        self.peak_delay_orf, n_organic_rf_channels, name=constants.PEAK_DELAY_ORF
+    )
+    exponent_orf = tfp.distributions.BatchBroadcast(
+        self.exponent_orf, n_organic_rf_channels, name=constants.EXPONENT_ORF
+    )
     sigma = tfp.distributions.BatchBroadcast(
         self.sigma, sigma_shape, name=constants.SIGMA
     )
@@ -876,6 +950,14 @@ class PriorDistribution:
         slope_rf=slope_rf,
         slope_om=slope_om,
         slope_orf=slope_orf,
+        peak_delay_m=peak_delay_m,      # Added
+        exponent_m=exponent_m,          # Added
+        peak_delay_rf=peak_delay_rf,    # Added
+        exponent_rf=exponent_rf,        # Added
+        peak_delay_om=peak_delay_om,    # Added
+        exponent_om=exponent_om,        # Added
+        peak_delay_orf=peak_delay_orf,  # Added
+        exponent_orf=exponent_orf,      # Added
         sigma=sigma,
         roi_m=roi_m,
         roi_rf=roi_rf,

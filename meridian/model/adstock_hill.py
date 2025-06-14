@@ -1,17 +1,3 @@
-# Copyright 2025 The Meridian Authors.
-#
-# Licensed under the Apache License, Version 2.0 (the "License");
-# you may not use this file except in compliance with the License.
-# You may obtain a copy of the License at
-#
-#     http://www.apache.org/licenses/LICENSE-2.0
-#
-# Unless required by applicable law or agreed to in writing, software
-# distributed under the License is distributed on an "AS IS" BASIS,
-# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
-# See the License for the specific language governing permissions and
-# limitations under the License.
-
 """Function definitions for Adstock and Hill calculations."""
 
 import abc
@@ -25,9 +11,13 @@ __all__ = [
     'carryover_geometric',
 ]
 
-
 def _validate_arguments(
-    media: tf.Tensor, alpha: tf.Tensor, max_lag: int, n_times_output: int
+    media: tf.Tensor,
+    alpha: tf.Tensor,
+    max_lag: int,
+    n_times_output: int,
+    peak_delay: tf.Tensor, # Changed to tf.Tensor
+    exponent: tf.Tensor,
 ) -> None:
   batch_dims = alpha.shape[:-1]
   n_media_times = media.shape[-2]
@@ -46,10 +36,35 @@ def _validate_arguments(
     raise ValueError(
         '`media` contains a different number of channels than `alpha`.'
     )
+
+  # Validate peak_delay shape
+  if peak_delay.shape != alpha.shape:
+    if peak_delay.shape != tf.TensorShape([]) and peak_delay.shape[:-1] != alpha.shape[:-1]:
+         raise ValueError(
+            '`peak_delay` must be a scalar or match `alpha` batch and channel dims.'
+        )
+    if peak_delay.shape != tf.TensorShape([]) and peak_delay.shape[-1] != alpha.shape[-1]:
+        raise ValueError(
+            '`peak_delay` contains a different number of channels than `alpha`.'
+        )
+
+  if exponent.shape != alpha.shape:
+    if exponent.shape != tf.TensorShape([]) and exponent.shape[:-1] != alpha.shape[:-1]:
+         raise ValueError(
+            '`exponent` must be a scalar or match `alpha` batch and channel dims.'
+        )
+    if exponent.shape != tf.TensorShape([]) and exponent.shape[-1] != alpha.shape[-1]:
+        raise ValueError(
+            '`exponent` contains a different number of channels than `alpha`.'
+        )
+
   if n_times_output <= 0:
     raise ValueError('`n_times_output` must be positive.')
   if max_lag < 0:
     raise ValueError('`max_lag` must be non-negative.')
+  # peak_delay non-negativity check (element-wise for tensor)
+  if tf.reduce_any(peak_delay < 0):
+      raise ValueError('All elements in `peak_delay` must be non-negative.')
 
 
 def _adstock(
@@ -57,57 +72,111 @@ def _adstock(
     alpha: tf.Tensor,
     max_lag: int,
     n_times_output: int,
+    peak_delay: tf.Tensor | int = 0, # Changed to tf.Tensor | int
+    exponent: tf.Tensor | float = 1.0,
 ) -> tf.Tensor:
-  """Computes the Adstock function."""
-  _validate_arguments(
-      media=media, alpha=alpha, max_lag=max_lag, n_times_output=n_times_output
-  )
-  # alpha dims: batch_dims, n_media_channels.
-  # media dims: batch_dims (optional), n_geos, n_media_times, n_channels.
-  n_media_times = media.shape[-2]
+  """Computes the Adstock function with peak delay and exponent.
 
-  # The window size is the number of time periods that go into the adstock
-  # weighted average for each output time period.
+  The adstock weight for lag `i` is calculated as:
+  w_i = alpha ^ (((i - peak_delay)^2) / exponent)
+  where `i` is the lag (0, 1, ..., window_size-1).
+  The weights are then normalized to sum to 1.
+  """
+  # Convert peak_delay to tensor if it's an int, matching alpha's dtype
+  if isinstance(peak_delay, int):
+    peak_delay_tensor = tf.fill(alpha.shape, tf.constant(peak_delay, dtype=alpha.dtype))
+  else:
+    peak_delay_tensor = tf.cast(peak_delay, dtype=alpha.dtype)
+  if peak_delay_tensor.shape == tf.TensorShape([]): # Scalar peak_delay tensor
+      peak_delay_tensor = tf.fill(alpha.shape, peak_delay_tensor)
+  elif peak_delay_tensor.shape != alpha.shape: # Broadcasting logic for peak_delay
+      if peak_delay_tensor.shape[:-1] == alpha.shape[:-1] and peak_delay_tensor.shape[-1] == 1:
+          peak_delay_tensor = tf.tile(peak_delay_tensor, [1] * (len(alpha.shape)-1) + [alpha.shape[-1]])
+      elif len(peak_delay_tensor.shape) == 1 and peak_delay_tensor.shape[0] == alpha.shape[-1] and len(alpha.shape) > 1:
+          new_shape = [1] * (len(alpha.shape) -1) + [alpha.shape[-1]]
+          peak_delay_tensor = tf.reshape(peak_delay_tensor, new_shape)
+      else:
+          raise ValueError(
+              f"`peak_delay` shape {peak_delay.shape} is not compatible with `alpha` shape {alpha.shape}"
+          )
+
+
+  if isinstance(exponent, float):
+    exponent_tensor = tf.constant(exponent, dtype=alpha.dtype)
+  else:
+    exponent_tensor = tf.cast(exponent, dtype=alpha.dtype)
+  if exponent_tensor.shape == tf.TensorShape([]):
+      exponent_tensor = tf.fill(alpha.shape, exponent_tensor)
+  elif exponent_tensor.shape != alpha.shape :
+      if exponent_tensor.shape[:-1] == alpha.shape[:-1] and exponent_tensor.shape[-1] == 1:
+          exponent_tensor = tf.tile(exponent_tensor, [1] * (len(alpha.shape)-1) + [alpha.shape[-1]])
+      elif len(exponent_tensor.shape) == 1 and exponent_tensor.shape[0] == alpha.shape[-1] and len(alpha.shape) > 1:
+          new_shape = [1] * (len(alpha.shape) -1) + [alpha.shape[-1]]
+          exponent_tensor = tf.reshape(exponent_tensor, new_shape)
+      else:
+          raise ValueError(
+              f"`exponent` shape {exponent.shape} is not compatible with `alpha` shape {alpha.shape}"
+          )
+
+  _validate_arguments(
+      media=media,
+      alpha=alpha,
+      max_lag=max_lag,
+      n_times_output=n_times_output,
+      peak_delay=peak_delay_tensor,
+      exponent=exponent_tensor,
+  )
+
+  n_media_times = media.shape[-2]
   window_size = min(max_lag + 1, n_media_times)
 
-  # Drop any excess historical time periods that do not affect output.
+  if window_size <= 0 :
+      output_batch_dims = tf.broadcast_dynamic_shape(media.shape[:-3], alpha.shape[:-1])
+      out_shape = output_batch_dims
+      if len(media.shape) >=3:
+          out_shape = tf.concat([out_shape, media.shape[-3:-2]], axis=0)
+      out_shape = tf.concat([out_shape, [n_times_output, media.shape[-1]]], axis=0)
+      return tf.zeros(out_shape, dtype=media.dtype)
+
   required_n_media_times = n_times_output + window_size - 1
   if n_media_times > required_n_media_times:
-    # Note that ProductCoverage believes that unit tests should cover the case
-    # that both conditions (1) `n_media_times > required_n_media_times` and
-    # (2) `window_size = n_media_times`. However, this combination of conditions
-    # is not possible.
     media = media[..., -required_n_media_times:, :]
-
-  # If necessary, pad the media tensor with zeros. For each output time period,
-  # we need a media history of at least `window_size` time periods from which to
-  # calculate the adstock. The purpose of padding is to allow us to apply
-  # a fixed window size calculation to all time periods. The purpose is NOT to
-  # ensure that we have `max_lag` historical time periods for each output time
-  # period. If `max_lag` is set to a huge value, it is not necessary to pad the
-  # data with a huge number of zeros. The `normalization_factors` normalize
-  # the weights to the correct values even if `window_size` < `max_lag`+1.
   if n_media_times < required_n_media_times:
     pad_shape = (
         media.shape[:-2]
         + (required_n_media_times - n_media_times,)
         + (media.shape[-1],)
     )
-    media = tf.concat([tf.zeros(pad_shape), media], axis=-2)
+    media = tf.concat([tf.zeros(pad_shape, dtype=media.dtype), media], axis=-2)
 
-  # Adstock calculation.
   window_list = [None] * window_size
   for i in range(window_size):
     window_list[i] = media[..., i:i+n_times_output, :]
   windowed = tf.stack(window_list)
-  l_range = tf.range(window_size - 1, -1, -1, dtype=tf.float32)
-  weights = tf.expand_dims(alpha, -1) ** l_range
-  normalization_factors = tf.expand_dims(
-      (1 - alpha ** (window_size)) / (1 - alpha), -1
-  )
-  weights = tf.divide(weights, normalization_factors)
-  return tf.einsum('...mw,w...gtm->...gtm', weights, windowed)
 
+  lags = tf.range(tf.cast(window_size, dtype=tf.float32), dtype=tf.float32)
+
+  alpha_f = tf.cast(alpha, tf.float32)
+  peak_delay_f = tf.cast(peak_delay_tensor, tf.float32) # Now a tensor [..., C]
+  exponent_f = tf.cast(exponent_tensor, tf.float32)
+
+  epsilon = 1e-6
+  exponent_safe = tf.maximum(exponent_f, epsilon)
+
+  lags_bcast = tf.reshape(lags, [1] * len(alpha_f.shape) + [-1])
+  alpha_expanded = tf.expand_dims(alpha_f, axis=-1)
+  peak_delay_expanded = tf.expand_dims(peak_delay_f, axis=-1) # [..., C, 1]
+  exponent_expanded = tf.expand_dims(exponent_safe, axis=-1)
+
+  numerator = (lags_bcast - peak_delay_expanded)**2 # peak_delay_expanded is [...,C,1]
+  power = numerator / exponent_expanded
+  weights = alpha_expanded ** power
+
+  sum_weights = tf.reduce_sum(weights, axis=-1, keepdims=True)
+  weights = tf.divide(weights, tf.maximum(sum_weights, epsilon))
+  weights = tf.cast(weights, media.dtype)
+
+  return tf.einsum('...cw,w...gtc->...gtc', weights, windowed)
 
 def _hill(
     media: tf.Tensor,
@@ -116,8 +185,6 @@ def _hill(
 ) -> tf.Tensor:
   """Computes the Hill function."""
   batch_dims = slope.shape[:-1]
-
-  # Argument checks.
   if slope.shape != ec.shape:
     raise ValueError('`slope` and `ec` dimensions do not match.')
   if media.shape[:-3] not in [tf.TensorShape([]), tf.TensorShape(batch_dims)]:
@@ -130,226 +197,134 @@ def _hill(
     raise ValueError(
         '`media` contains a different number of channels than `slope` and `ec`.'
     )
-
   t1 = media ** slope[..., tf.newaxis, tf.newaxis, :]
   t2 = (ec**slope)[..., tf.newaxis, tf.newaxis, :]
   return t1 / (t1 + t2)
 
-
 class AdstockHillTransformer(metaclass=abc.ABCMeta):
-  """Abstract class to compute the Adstock and Hill transformation of media."""
-
   @abc.abstractmethod
   def forward(self, media: tf.Tensor) -> tf.Tensor:
-    """Computes the Adstock and Hill transformation of a given media tensor."""
     pass
 
-
 class AdstockTransformer(AdstockHillTransformer):
-  """Computes the Adstock transformation of media."""
-
-  def __init__(self, alpha: tf.Tensor, max_lag: int, n_times_output: int):
+  def __init__(
+      self,
+      alpha: tf.Tensor,
+      max_lag: int,
+      n_times_output: int,
+      peak_delay: tf.Tensor | int = 0, # Changed to tf.Tensor | int
+      exponent: tf.Tensor | float = 1.0,
+  ):
     """Initializes this transformer based on Adstock function parameters.
-
     Args:
-      alpha: Tensor of `alpha` parameters taking values ≥ `[0, 1)` with
-        dimensions `[..., n_media_channels]`. Batch dimensions `(...)` are
-        optional. Note that `alpha = 0` is allowed, so it is possible to put a
-        point mass prior at zero (effectively no Adstock). However, `alpha = 1`
-        is not allowed since the geometric sum formula is not defined, and there
-        is no practical reason to have point mass at `alpha = 1`.
-      max_lag: Integer indicating the maximum number of lag periods (≥ `0`) to
-        include in the Adstock calculation.
-      n_times_output: Integer indicating the number of time periods to include
-        in the output tensor. Cannot exceed the number of time periods of the
-        media argument, for example, `media.shape[-2]`. The output time periods
-        correspond to the most recent time periods of the media argument. For
-        example, `media[..., -n_times_output:, :]` represents the media
-        execution of the output weeks.
+      alpha: Tensor of `alpha` parameters (decay rate, 0 < alpha < 1).
+      max_lag: Integer for maximum lag.
+      n_times_output: Integer for number of output time periods.
+      peak_delay: Tensor or int for peak lag (non-negative).
+      exponent: Tensor or float for adstock curve shape (positive).
     """
+    # peak_delay non-negativity check
+    if isinstance(peak_delay, int):
+        if peak_delay < 0:
+            raise ValueError('`peak_delay` must be non-negative.')
+        self._peak_delay = tf.fill(alpha.shape, tf.constant(peak_delay, dtype=alpha.dtype)) # Match alpha shape
+    else:
+        if tf.reduce_any(tf.cast(peak_delay, tf.float32) < 0): # Cast to float for comparison if it's uint etc.
+            raise ValueError('All elements in `peak_delay` must be non-negative.')
+        self._peak_delay = tf.cast(peak_delay, dtype=alpha.dtype)
+    # Ensure self._peak_delay has same rank and compatible shape as alpha for _adstock
+    if self._peak_delay.shape == tf.TensorShape([]):
+        self._peak_delay = tf.fill(alpha.shape, self._peak_delay)
+
+
+    if isinstance(exponent, float):
+        self._exponent = tf.constant(exponent, dtype=alpha.dtype)
+    else:
+        self._exponent = tf.cast(exponent, dtype=alpha.dtype)
+    if self._exponent.shape == tf.TensorShape([]):
+        self._exponent = tf.fill(alpha.shape, self._exponent)
+
+
     self._alpha = alpha
     self._max_lag = max_lag
     self._n_times_output = n_times_output
 
   def forward(self, media: tf.Tensor) -> tf.Tensor:
-    """Computes the Adstock transformation of a given `media` tensor.
-
-    For geo `g`, time period `t`, and media channel `m`, Adstock is calculated
-    as `adstock_{g,t,m} = sum_{i=0}^max_lag media_{g,t-i,m} alpha^i`.
-
-    Note: The Hill function can be applied before or after Adstock. If Hill is
-    applied first, then the Adstock media input can contain batch dimensions
-    because the transformed media tensor will be different for each posterior
-    sample.
-
-    Args:
-      media: Tensor of media values with dimensions `[..., n_geos,
-        n_media_times, n_media_channels]`. Batch dimensions `(...)` are
-        optional, but if batch dimensions are included, they must match the
-        batch dimensions of `alpha`. Media is not required to have batch
-        dimensions even if `alpha` contains batch dimensions.
-
-    Returns:
-      Tensor with dimensions `[..., n_geos, n_times_output, n_media_channels]`
-      representing Adstock transformed media.
-    """
     return _adstock(
         media=media,
         alpha=self._alpha,
         max_lag=self._max_lag,
         n_times_output=self._n_times_output,
+        peak_delay=self._peak_delay,
+        exponent=self._exponent,
     )
 
-
 class HillTransformer(AdstockHillTransformer):
-  """Class to compute the Hill transformation of media."""
-
   def __init__(self, ec: tf.Tensor, slope: tf.Tensor):
-    """Initializes the instance based on the Hill function parameters.
-
-    Args:
-      ec: Tensor with dimensions `[..., n_media_channels]`. Batch dimensions
-        `(...)` are optional, but if batch dimensions are included, they must
-        match the batch dimensions of `ec`.
-      slope: Tensor with dimensions `[..., n_media_channels]`. Batch dimensions
-        `(...)` are optional, but if batch dimensions are included, they must
-        match the batch dimensions of `slope`.
-    """
     self._ec = ec
     self._slope = slope
-
   def forward(self, media: tf.Tensor) -> tf.Tensor:
-    """Computes the Hill transformation of a given `media` tensor.
-
-    Calculates results for the Hill function, which accounts for the diminishing
-    returns of media effects.
-
-    Args:
-      media: Tensor with dimensions `[..., n_geos, n_media_times,
-        n_media_channels]`. Batch dimensions `(...)` are optional, but if batch
-        dimensions are included, they must match the batch dimensions of `slope`
-        and `ec`. Media is not required to have batch dimensions even if `slope`
-        and `ec` contain batch dimensions.
-
-    Returns:
-      Tensor with dimensions `[..., n_geos, n_media_times, n_media_channels]`
-      representing Hill-transformed media.
-    """
     return _hill(media=media, ec=self._ec, slope=self._slope)
 
 def carryover_adstock(
     media: tf.Tensor,
     alpha: tf.Tensor,
     max_lag: int | None,
+    peak_delay: tf.Tensor | int = 0, # Changed to tf.Tensor | int
+    exponent: tf.Tensor | float = 1.0,
 ) -> tf.Tensor:
-  """Computes the Adstock carryover effect.
-
-  This function is similar to `_adstock` but is intended for carryover effects
-  and uses the `max_lag` from `carryover_max_lag` spec.
-
-  Args:
-    media: Tensor of media values with dimensions `[..., n_geos,
-      n_media_times, n_media_channels]`.
-    alpha: Tensor of `alpha` parameters for Adstock.
-    max_lag: Integer indicating the maximum number of lag periods (>= 0) to
-      include in the Adstock calculation. If None, it's equivalent to
-      infinite max lag.
-
-  Returns:
-    Tensor with dimensions `[..., n_geos, n_times_output, n_media_channels]`
-    representing Adstock carryover transformed media.
-  """
   n_media_times = media.shape[-2]
-  # If max_lag is None (infinite), set it to n_media_times - 1 for practical purposes.
-  # This means the carryover can extend back to the beginning of the data.
-  effective_max_lag = max_lag if max_lag is not None else n_media_times -1
+  effective_max_lag = max_lag if max_lag is not None else n_media_times - 1
+  if effective_max_lag < 0 : effective_max_lag = 0
 
-  # For carryover, the number of output times is the same as input times.
+  # Ensure peak_delay is a Tensor for _adstock
+  peak_delay_tensor: tf.Tensor
+  if isinstance(peak_delay, int):
+    # Default to alpha's shape if peak_delay is int, assuming alpha is passed correctly
+    peak_delay_tensor = tf.fill(alpha.shape, tf.constant(peak_delay, dtype=alpha.dtype))
+  else:
+    peak_delay_tensor = tf.cast(peak_delay, dtype=alpha.dtype)
+  if peak_delay_tensor.shape == tf.TensorShape([]):
+      peak_delay_tensor = tf.fill(alpha.shape, peak_delay_tensor)
+
+
   return _adstock(
       media=media,
       alpha=alpha,
       max_lag=effective_max_lag,
       n_times_output=n_media_times,
+      peak_delay=peak_delay_tensor,
+      exponent=exponent, # exponent is handled similarly inside _adstock
   )
 
 def carryover_geometric(
     media: tf.Tensor,
     decay_rate: float,
 ) -> tf.Tensor:
-  """Computes the geometric carryover effect.
-
-  Args:
-    media: Tensor of media values with dimensions `[..., n_geos,
-      n_media_times, n_media_channels]`.
-    decay_rate: Float between 0 and 1 indicating the decay rate.
-
-  Returns:
-    Tensor with dimensions `[..., n_geos, n_media_times, n_media_channels]`
-    representing geometric carryover transformed media.
-  """
   if not (0.0 <= decay_rate <= 1.0):
     raise ValueError("`decay_rate` must be between 0.0 and 1.0.")
-
-  # Geometric carryover can be implemented using tf.scan
-  # The formula is: y[t] = media[t] + decay_rate * y[t-1]
-  # For tf.scan, we need to define a function that takes (previous_output, current_input)
-  # and returns new_output.
-  # The inputs are iterated along the time dimension (axis=-2 for media).
-
-  # To handle batch dimensions and geo dimensions correctly, we might need to
-  # transpose and then transpose back, or use map_fn if scan is tricky with multiple batch dims.
-  # For simplicity, let's assume media is [n_geos, n_media_times, n_channels]
-  # or [n_batch, n_geos, n_media_times, n_channels]
-
   original_shape = tf.shape(media)
-  # Reshape to [n_batch * n_geos * n_channels, n_media_times] for scan
-  # This simplifies scan operation over time for each series independently.
-  if len(media.shape) == 4: # batch, geo, time, channel
-    num_batch, num_geos, num_times, num_channels = media.shape
-    # Transpose to [time, batch, geo, channel] then reshape
-    media_transposed = tf.transpose(media, perm=[2, 0, 1, 3])
-    media_reshaped = tf.reshape(media_transposed, [num_times, num_batch * num_geos * num_channels])
-  elif len(media.shape) == 3: # geo, time, channel
-    num_geos, num_times, num_channels = media.shape
-    media_transposed = tf.transpose(media, perm=[1, 0, 2]) # [time, geo, channel]
-    media_reshaped = tf.reshape(media_transposed, [num_times, num_geos * num_channels])
-  else: # Assume [time, channels] or similar, needs specific handling or error
-    raise ValueError(f"Unsupported media shape for geometric carryover: {media.shape}")
-
-
-  def scan_fn(previous_carryover, current_media_slice):
-    # previous_carryover is the carryover from t-1
-    # current_media_slice is media[t]
-    # new_carryover = current_media_slice + decay_rate * previous_carryover
-    return current_media_slice + decay_rate * previous_carryover
-
-  # Initializer for scan: zero tensor with shape of a single time slice of media_reshaped
-  # media_reshaped has shape [num_times, num_series]
-  # initializer should have shape [num_series]
-  initializer = tf.zeros_like(media_reshaped[0])
-
-  # Apply scan along the time dimension (axis 0 of media_reshaped)
-  carryover_transformed_reshaped = tf.scan(
-      fn=scan_fn,
-      elems=media_reshaped,
-      initializer=initializer
-  )
-
-  # Reshape back to original structure
-  if len(media.shape) == 4:
-    # Reshape from [num_times, num_batch * num_geos * num_channels]
-    # to [num_times, num_batch, num_geos, num_channels]
-    carryover_transformed_transposed = tf.reshape(carryover_transformed_reshaped, [num_times, num_batch, num_geos, num_channels])
-    # Transpose back to [num_batch, num_geos, num_times, num_channels]
-    carryover_transformed = tf.transpose(carryover_transformed_transposed, perm=[1, 2, 0, 3])
-  elif len(media.shape) == 3:
-    # Reshape from [num_times, num_geos * num_channels]
-    # to [num_times, num_geos, num_channels]
-    carryover_transformed_transposed = tf.reshape(carryover_transformed_reshaped, [num_times, num_geos, num_channels])
-    # Transpose back to [num_geos, num_times, num_channels]
-    carryover_transformed = tf.transpose(carryover_transformed_transposed, perm=[1, 0, 2])
+  media_rank = len(media.shape)
+  if media_rank == 5:
+    perm_to_time_first = [3, 0, 1, 2, 4]; perm_back = [1, 2, 3, 0, 4]
+    num_times = media.shape[3]; num_series = media.shape[0]*media.shape[1]*media.shape[2]*media.shape[4]
+    final_transposed_shape = [num_times, media.shape[0], media.shape[1], media.shape[2], media.shape[4]]
+  elif media_rank == 4:
+    perm_to_time_first = [2, 0, 1, 3]; perm_back = [1, 2, 0, 3]
+    num_times = media.shape[2]; num_series = media.shape[0]*media.shape[1]*media.shape[3]
+    final_transposed_shape = [num_times, media.shape[0], media.shape[1], media.shape[3]]
+  elif media_rank == 3:
+    perm_to_time_first = [1, 0, 2]; perm_back = [1, 0, 2]
+    num_times = media.shape[1]; num_series = media.shape[0]*media.shape[2]
+    final_transposed_shape = [num_times, media.shape[0], media.shape[2]]
   else:
-    # This case should not be reached due to earlier check
-    carryover_transformed = carryover_transformed_reshaped # Or error
-
+    raise ValueError(f"Unsupported media shape for geometric carryover: {media.shape}")
+  media_transposed = tf.transpose(media, perm=perm_to_time_first)
+  media_reshaped = tf.reshape(media_transposed, [num_times, num_series])
+  def scan_fn(previous_carryover, current_media_slice):
+    return current_media_slice + decay_rate * previous_carryover
+  initializer = tf.zeros_like(media_reshaped[0])
+  carryover_transformed_reshaped = tf.scan(fn=scan_fn, elems=media_reshaped, initializer=initializer)
+  carryover_transformed_transposed = tf.reshape(carryover_transformed_reshaped, final_transposed_shape)
+  carryover_transformed = tf.transpose(carryover_transformed_transposed, perm=perm_back)
   return tf.ensure_shape(carryover_transformed, media.shape)

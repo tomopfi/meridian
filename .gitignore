@@ -11,12 +11,15 @@ _pycache__/
 build/
 dist/
 poetry.lock
-
+venv/*
 # Tests
 .pytest_cache/
 
 # Type checking
 .pytype/
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
 
 # Other
 *.DS_Store

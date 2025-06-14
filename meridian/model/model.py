@@ -1096,6 +1096,8 @@ class Meridian:
       alpha_m: tf.Tensor,
       ec_m: tf.Tensor,
       slope_m: tf.Tensor,
+      peak_delay_m: tf.Tensor,  # Added new parameter
+      exponent_m: tf.Tensor,    # Added new parameter
   ) -> tf.Tensor:
     """Calculates linear predictor counterfactual difference for non-RF media.
 
@@ -1113,6 +1115,8 @@ class Meridian:
       alpha_m: The adstock alpha parameter values.
       ec_m: The adstock ec parameter values.
       slope_m: The adstock hill slope parameter values.
+      peak_delay_m: Peak delay parameter for Adstock calculations.
+      exponent_m: Exponent parameter for Adstock curve shape.
 
     Returns:
       The linear predictor difference between the treatment variable and its
@@ -1142,6 +1146,8 @@ class Meridian:
         alpha_m,
         ec_m,
         slope_m,
+        peak_delay_m,  # Added
+        exponent_m,    # Added
     )
     # Absolute values is needed because the difference is negative for mROI
     # priors and positive for ROI and contribution priors.
@@ -1153,6 +1159,8 @@ class Meridian:
       alpha_rf: tf.Tensor,
       ec_rf: tf.Tensor,
       slope_rf: tf.Tensor,
+      peak_delay_rf: tf.Tensor,  # Added new parameter
+      exponent_rf: tf.Tensor,    # Added new parameter
   ) -> tf.Tensor:
     """Calculates linear predictor counterfactual difference for RF media.
 
@@ -1170,6 +1178,8 @@ class Meridian:
       alpha_rf: The adstock alpha parameter values.
       ec_rf: The adstock ec parameter values.
       slope_rf: The adstock hill slope parameter values.
+      peak_delay_rf: Peak delay parameter for Adstock calculations.
+      exponent_rf: Exponent parameter for Adstock curve shape.
 
     Returns:
       The linear predictor difference between the treatment variable and its
@@ -1200,6 +1210,8 @@ class Meridian:
         alpha=alpha_rf,
         ec=ec_rf,
         slope=slope_rf,
+        peak_delay=peak_delay_rf,  # Added with keyword
+        exponent=exponent_rf,      # Added with keyword
     )
     # Absolute values is needed because the difference is negative for mROI
     # priors and positive for ROI and contribution priors.
@@ -1293,6 +1305,8 @@ class Meridian:
       alpha: tf.Tensor,
       ec: tf.Tensor,
       slope: tf.Tensor,
+      peak_delay: tf.Tensor,  # Added new parameter
+      exponent: tf.Tensor,    # Added new parameter
       n_times_output: int | None = None,
   ) -> tf.Tensor:
     """Transforms media using Adstock and Hill functions in the desired order.
@@ -1305,6 +1319,8 @@ class Meridian:
       alpha: Uniform distribution for Adstock and Hill calculations.
       ec: Shifted half-normal distribution for Adstock and Hill calculations.
       slope: Deterministic distribution for Adstock and Hill calculations.
+      peak_delay: Peak delay parameter for Adstock calculations.
+      exponent: Exponent parameter for Adstock curve shape.
       n_times_output: Number of time periods to output. This argument is
         optional when the number of time periods in `media` equals
         `self.n_media_times`, in which case `n_times_output` defaults to
@@ -1325,6 +1341,8 @@ class Meridian:
         alpha=alpha,
         max_lag=self.model_spec.max_lag,
         n_times_output=n_times_output,
+        peak_delay=peak_delay,  # Added
+        exponent=exponent,      # Added
     )
     hill_transformer = adstock_hill.HillTransformer(
         ec=ec,
@@ -1361,6 +1379,8 @@ class Meridian:
       alpha: tf.Tensor,
       ec: tf.Tensor,
       slope: tf.Tensor,
+      peak_delay: tf.Tensor,  # Added new parameter
+      exponent: tf.Tensor,    # Added new parameter
       n_times_output: int | None = None,
   ) -> tf.Tensor:
     """Transforms reach and frequency (RF) using Hill and Adstock functions.
@@ -1373,6 +1393,8 @@ class Meridian:
       alpha: Uniform distribution for Adstock and Hill calculations.
       ec: Shifted half-normal distribution for Adstock and Hill calculations.
       slope: Deterministic distribution for Adstock and Hill calculations.
+      peak_delay: Peak delay parameter for Adstock calculations.
+      exponent: Exponent parameter for Adstock curve shape.
       n_times_output: Number of time periods to output. This argument is
         optional when the number of time periods in `reach` equals
         `self.n_media_times`, in which case `n_times_output` defaults to
@@ -1397,6 +1419,8 @@ class Meridian:
         alpha=alpha,
         max_lag=self.model_spec.max_lag,
         n_times_output=n_times_output,
+        peak_delay=peak_delay,  # Added
+        exponent=exponent,      # Added
     )
     adj_frequency = hill_transformer.forward(frequency)
     rf_transformed = adstock_transformer.forward(reach * adj_frequency)

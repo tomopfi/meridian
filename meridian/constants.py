@@ -259,6 +259,10 @@ EC_M = 'ec_m'
 EC_RF = 'ec_rf'
 SLOPE_M = 'slope_m'
 SLOPE_RF = 'slope_rf'
+PEAK_DELAY_M = 'peak_delay_m'  # New
+EXPONENT_M = 'exponent_m'    # New
+PEAK_DELAY_RF = 'peak_delay_rf' # New
+EXPONENT_RF = 'exponent_rf'   # New
 ETA_M = 'eta_m'
 ETA_RF = 'eta_rf'
 BETA_M = 'beta_m'
@@ -275,6 +279,10 @@ EC_OM = 'ec_om'
 EC_ORF = 'ec_orf'
 SLOPE_OM = 'slope_om'
 SLOPE_ORF = 'slope_orf'
+PEAK_DELAY_OM = 'peak_delay_om' # New
+EXPONENT_OM = 'exponent_om'   # New
+PEAK_DELAY_ORF = 'peak_delay_orf'# New
+EXPONENT_ORF = 'exponent_orf'  # New
 BETA_GOM = 'beta_gom'
 BETA_GORF = 'beta_gorf'
 SIGMA = 'sigma'
@@ -327,6 +335,8 @@ MEDIA_PARAMETERS = (
     ALPHA_M,
     EC_M,
     SLOPE_M,
+    PEAK_DELAY_M,  # Added
+    EXPONENT_M,    # Added
 )
 RF_PARAMETERS = (
     ROI_RF,
@@ -337,6 +347,8 @@ RF_PARAMETERS = (
     ALPHA_RF,
     EC_RF,
     SLOPE_RF,
+    PEAK_DELAY_RF, # Added
+    EXPONENT_RF,   # Added
 )
 ORGANIC_MEDIA_PARAMETERS = (
     CONTRIBUTION_OM,
@@ -345,6 +357,8 @@ ORGANIC_MEDIA_PARAMETERS = (
     ALPHA_OM,
     EC_OM,
     SLOPE_OM,
+    PEAK_DELAY_OM, # Added
+    EXPONENT_OM,   # Added
 )
 ORGANIC_RF_PARAMETERS = (
     CONTRIBUTION_ORF,
@@ -353,6 +367,8 @@ ORGANIC_RF_PARAMETERS = (
     ALPHA_ORF,
     EC_ORF,
     SLOPE_ORF,
+    PEAK_DELAY_ORF, # Added
+    EXPONENT_ORF,   # Added
 )
 NON_MEDIA_PARAMETERS = (
     CONTRIBUTION_N,
@@ -378,10 +394,10 @@ GEO_NON_MEDIA_PARAMETERS = (GAMMA_GN,)
 
 ALL_PRIOR_DISTRIBUTION_PARAMETERS = (
     *KNOTS_PARAMETERS,
-    *MEDIA_PARAMETERS,
-    *RF_PARAMETERS,
-    *ORGANIC_MEDIA_PARAMETERS,
-    *ORGANIC_RF_PARAMETERS,
+    *MEDIA_PARAMETERS,  # PEAK_DELAY_M, EXPONENT_M are now included here
+    *RF_PARAMETERS,     # PEAK_DELAY_RF, EXPONENT_RF are now included here
+    *ORGANIC_MEDIA_PARAMETERS, # PEAK_DELAY_OM, EXPONENT_OM are now included here
+    *ORGANIC_RF_PARAMETERS,    # PEAK_DELAY_ORF, EXPONENT_ORF are now included here
     *NON_MEDIA_PARAMETERS,
     *CONTROL_PARAMETERS,
     *SIGMA_PARAMETERS,
@@ -470,10 +486,14 @@ INFERENCE_DIMS = immutabledict.immutabledict(
     }
     | {param: (CONTROL_VARIABLE,) for param in CONTROL_PARAMETERS}
     | {param: (NON_MEDIA_CHANNEL,) for param in NON_MEDIA_PARAMETERS}
-    | {param: (MEDIA_CHANNEL,) for param in MEDIA_PARAMETERS}
-    | {param: (RF_CHANNEL,) for param in RF_PARAMETERS}
-    | {param: (ORGANIC_MEDIA_CHANNEL,) for param in ORGANIC_MEDIA_PARAMETERS}
-    | {param: (ORGANIC_RF_CHANNEL,) for param in ORGANIC_RF_PARAMETERS}
+    | {param: (MEDIA_CHANNEL,) for param in MEDIA_PARAMETERS if param not in (PEAK_DELAY_M, EXPONENT_M)} # Exclude new params if they need different dims or handling
+    | {PEAK_DELAY_M: (MEDIA_CHANNEL,), EXPONENT_M: (MEDIA_CHANNEL,)} # Explicitly add new params with channel dim
+    | {param: (RF_CHANNEL,) for param in RF_PARAMETERS if param not in (PEAK_DELAY_RF, EXPONENT_RF)}
+    | {PEAK_DELAY_RF: (RF_CHANNEL,), EXPONENT_RF: (RF_CHANNEL,)}
+    | {param: (ORGANIC_MEDIA_CHANNEL,) for param in ORGANIC_MEDIA_PARAMETERS if param not in (PEAK_DELAY_OM, EXPONENT_OM)}
+    | {PEAK_DELAY_OM: (ORGANIC_MEDIA_CHANNEL,), EXPONENT_OM: (ORGANIC_MEDIA_CHANNEL,)}
+    | {param: (ORGANIC_RF_CHANNEL,) for param in ORGANIC_RF_PARAMETERS if param not in (PEAK_DELAY_ORF, EXPONENT_ORF)}
+    | {PEAK_DELAY_ORF: (ORGANIC_RF_CHANNEL,), EXPONENT_ORF: (ORGANIC_RF_CHANNEL,)}
 )
 
 IGNORED_TRACE_METRICS = ('variance_scaling',)
