@@ -1,15 +1,20 @@
 #!/usr/bin/env python3
 # -*- coding: utf-8 -*-
 """
-Meridian Carryover効果デモ
+Meridian Enhanced Adstock Parameters デモ
 
-このスクリプトでは、Meridianライブラリにおけるcarryover効果の設定と分析方法を説明します。
+このスクリプトでは、Meridianライブラリの新しい拡張アドストックパラメータを使用した
+高度なcarryover効果のモデリング方法を説明します。
 
-Carryover効果とは、広告の効果が投下された期間だけでなく、その後の期間にも持続する効果のことです。
-Meridianでは以下の2つのcarryover変換タイプをサポートしています：
+拡張アドストック機能:
+- peak_delay: 効果のピーク時点を制御
+- exponent: アドストックカーブの形状を制御
+- alpha: 従来の減衰率パラメータ
 
-1. Adstock変換: より柔軟なcarryover効果をモデル化
-2. Geometric変換: 幾何級数的な減衰を仮定したシンプルなcarryover効果
+新しいアドストック数式 (LightweightMMM互換):
+w_i = alpha^(((i - peak_delay)^2) / exponent)
+
+これにより、チャンネル別に異なるキャリーオーバーパターンをモデル化できます。
 """
 
 import numpy as np
@@ -107,55 +112,115 @@ def load_geo_data():
 
 def create_model_specs():
     """
-    異なるcarryover設定でモデル仕様を作成
+    異なるアドストックパラメータ設定でモデル仕様を作成
+    新しい拡張アドストックパラメータ（peak_delay, exponent）を含む
     """
-    print("=== モデル仕様の作成 ===")
+    print("=== 拡張アドストックパラメータを使用したモデル仕様の作成 ===")
 
-    # 共通のROI prior設定
-    roi_mu = 0.2
-    roi_sigma = 0.9
-    prior_dist = prior_distribution.PriorDistribution(
-        roi_m=tfp.distributions.LogNormal(roi_mu, roi_sigma, name=constants.ROI_M)
+    # 1. デフォルトの拡張アドストック設定
+    enhanced_prior_default = prior_distribution.PriorDistribution(
+        # 従来のパラメータ
+        roi_m=tfp.distributions.LogNormal(0.2, 0.9, name=constants.ROI_M),
+        alpha_m=tfp.distributions.Uniform(0.1, 0.8, name=constants.ALPHA_M),
+
+        # 新しい拡張アドストックパラメータ
+        peak_delay_m=tfp.distributions.TruncatedNormal(
+            loc=np.array([2.0, 1.0, 3.0, 0.5, 2.5]),  # チャンネル別のピーク遅延
+            scale=np.array([1.0, 0.5, 1.5, 0.3, 1.0]),
+            low=0.0,
+            high=8.0,
+            name=constants.PEAK_DELAY_M
+        ),
+
+        exponent_m=tfp.distributions.TruncatedNormal(
+            loc=np.array([2.0, 1.5, 2.5, 1.0, 1.8]),  # チャンネル別のカーブ形状
+            scale=np.array([0.5, 0.3, 0.8, 0.2, 0.4]),
+            low=0.5,
+            high=5.0,
+            name=constants.EXPONENT_M
+        )
     )
 
-    # 1. Adstock carryover (デフォルト設定)
-    model_spec_adstock = spec.ModelSpec(
-        prior=prior_dist,
-        carryover_transform_type='adstock',
-        carryover_max_lag=8
+    # 2. TV特化設定（長いピーク遅延、広いカーブ）
+    tv_focused_prior = prior_distribution.PriorDistribution(
+        roi_m=tfp.distributions.LogNormal(0.2, 0.9, name=constants.ROI_M),
+        alpha_m=tfp.distributions.Uniform(0.2, 0.7, name=constants.ALPHA_M),
+
+        peak_delay_m=tfp.distributions.TruncatedNormal(
+            loc=np.array([4.0, 1.0, 5.0, 0.5, 3.0]),  # TV系は長い遅延
+            scale=np.array([1.5, 0.5, 2.0, 0.3, 1.0]),
+            low=0.0,
+            high=12.0,
+            name=constants.PEAK_DELAY_M
+        ),
+
+        exponent_m=tfp.distributions.TruncatedNormal(
+            loc=np.array([3.0, 1.5, 3.5, 1.0, 2.5]),  # TV系は広いカーブ
+            scale=np.array([0.8, 0.3, 1.0, 0.2, 0.5]),
+            low=1.0,
+            high=6.0,
+            name=constants.EXPONENT_M
+        )
     )
 
-    # 2. Adstock carryover (より長いラグ)
-    model_spec_adstock_long = spec.ModelSpec(
-        prior=prior_dist,
-        carryover_transform_type='adstock',
-        carryover_max_lag=16
+    # 3. デジタル特化設定（短いピーク遅延、鋭いカーブ）
+    digital_focused_prior = prior_distribution.PriorDistribution(
+        roi_m=tfp.distributions.LogNormal(0.2, 0.9, name=constants.ROI_M),
+        alpha_m=tfp.distributions.Uniform(0.1, 0.6, name=constants.ALPHA_M),
+
+        peak_delay_m=tfp.distributions.TruncatedNormal(
+            loc=np.array([1.0, 0.5, 1.5, 0.2, 1.0]),  # デジタル系は短い遅延
+            scale=np.array([0.5, 0.2, 0.8, 0.1, 0.3]),
+            low=0.0,
+            high=4.0,
+            name=constants.PEAK_DELAY_M
+        ),
+
+        exponent_m=tfp.distributions.TruncatedNormal(
+            loc=np.array([1.2, 1.0, 1.5, 0.8, 1.1]),  # デジタル系は鋭いカーブ
+            scale=np.array([0.3, 0.2, 0.4, 0.1, 0.2]),
+            low=0.5,
+            high=2.5,
+            name=constants.EXPONENT_M
+        )
     )
 
-    # 3. Geometric carryover
-    model_spec_geometric = spec.ModelSpec(
-        prior=prior_dist,
-        carryover_transform_type='geometric',
-        carryover_decay_rate=0.3
+    # 4. 従来のアドストック（比較用）
+    traditional_prior = prior_distribution.PriorDistribution(
+        roi_m=tfp.distributions.LogNormal(0.2, 0.9, name=constants.ROI_M),
+        alpha_m=tfp.distributions.Uniform(0.1, 0.8, name=constants.ALPHA_M)
+        # peak_delay と exponent は使用しない（デフォルト値が適用される）
     )
 
-    # 4. No carryover (comparison baseline)
-    model_spec_no_carryover = spec.ModelSpec(
-        prior=prior_dist,
-        carryover_transform_type='adstock',
-        carryover_max_lag=0
-    )
-
+    # モデル仕様の作成
     model_specs = {
-        'Adstock (max_lag=8)': model_spec_adstock,
-        'Adstock (max_lag=16)': model_spec_adstock_long,
-        'Geometric (decay=0.3)': model_spec_geometric,
-        'No Carryover': model_spec_no_carryover
+        'Enhanced Default': spec.ModelSpec(
+            prior=enhanced_prior_default,
+            max_lag=8
+        ),
+        'TV Focused (Long Peak)': spec.ModelSpec(
+            prior=tv_focused_prior,
+            max_lag=12
+        ),
+        'Digital Focused (Short Peak)': spec.ModelSpec(
+            prior=digital_focused_prior,
+            max_lag=6
+        ),
+        'Traditional Adstock': spec.ModelSpec(
+            prior=traditional_prior,
+            max_lag=8
+        ),
     }
 
     print(f"作成したモデル仕様数: {len(model_specs)}")
     for name in model_specs.keys():
         print(f"  - {name}")
+
+    print("\n拡張アドストックパラメータの特徴:")
+    print("  Enhanced Default: バランスの取れた設定")
+    print("  TV Focused: 長いピーク遅延、広いカーブ（TV広告向け）")
+    print("  Digital Focused: 短いピーク遅延、鋭いカーブ（デジタル広告向け）")
+    print("  Traditional: 従来のアドストック（比較用）")
     print()
 
     return model_specs
@@ -294,7 +359,7 @@ def analyze_model_fit(models):
 
 def analyze_media_effects(models):
     """
-    メディア効果の分析
+    メディア効果の分析（拡張アドストックパラメータを含む）
     """
     print("=== メディア効果分析 ===")
 
@@ -314,8 +379,12 @@ def analyze_media_effects(models):
                 roi_df = roi_result.to_dataframe()
                 print(roi_df.round(3))
 
+                # 拡張アドストックパラメータの分析
+                adstock_params = analyze_enhanced_adstock_parameters(mmm)
+
                 media_effects[name] = {
                     'roi': roi_df,
+                    'adstock_params': adstock_params
                 }
             else:
                 print("  ROI分析結果を取得できませんでした")
@@ -326,6 +395,68 @@ def analyze_media_effects(models):
             media_effects[name] = None
 
     return media_effects
+
+def analyze_enhanced_adstock_parameters(mmm):
+    """
+    拡張アドストックパラメータの分析
+    """
+    adstock_results = {}
+
+    try:
+        # 事後分布から拡張アドストックパラメータを取得
+        if hasattr(mmm.inference_data, 'posterior'):
+            posterior = mmm.inference_data.posterior
+
+            # Peak delay パラメータの分析
+            if constants.PEAK_DELAY_M in posterior.data_vars:
+                peak_delay_samples = posterior[constants.PEAK_DELAY_M]
+                peak_delay_mean = peak_delay_samples.mean(['chain', 'draw']).values
+                peak_delay_std = peak_delay_samples.std(['chain', 'draw']).values
+
+                print("Peak Delay パラメータ:")
+                for i, (mean_val, std_val) in enumerate(zip(peak_delay_mean, peak_delay_std)):
+                    print(f"  チャンネル {i}: {mean_val:.2f} ± {std_val:.2f} 週")
+
+                adstock_results['peak_delay'] = {
+                    'mean': peak_delay_mean,
+                    'std': peak_delay_std
+                }
+
+            # Exponent パラメータの分析
+            if constants.EXPONENT_M in posterior.data_vars:
+                exponent_samples = posterior[constants.EXPONENT_M]
+                exponent_mean = exponent_samples.mean(['chain', 'draw']).values
+                exponent_std = exponent_samples.std(['chain', 'draw']).values
+
+                print("Exponent パラメータ:")
+                for i, (mean_val, std_val) in enumerate(zip(exponent_mean, exponent_std)):
+                    print(f"  チャンネル {i}: {mean_val:.2f} ± {std_val:.2f}")
+
+                adstock_results['exponent'] = {
+                    'mean': exponent_mean,
+                    'std': exponent_std
+                }
+
+            # Alpha パラメータの分析
+            if constants.ALPHA_M in posterior.data_vars:
+                alpha_samples = posterior[constants.ALPHA_M]
+                alpha_mean = alpha_samples.mean(['chain', 'draw']).values
+                alpha_std = alpha_samples.std(['chain', 'draw']).values
+
+                print("Alpha パラメータ:")
+                for i, (mean_val, std_val) in enumerate(zip(alpha_mean, alpha_std)):
+                    print(f"  チャンネル {i}: {mean_val:.3f} ± {std_val:.3f}")
+
+                adstock_results['alpha'] = {
+                    'mean': alpha_mean,
+                    'std': alpha_std
+                }
+
+    except Exception as e:
+        print(f"  拡張アドストックパラメータ分析でエラー: {e}")
+        return None
+
+    return adstock_results
 
 def compare_carryover_effects(models, media_effects):
     """
