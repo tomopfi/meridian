@@ -96,6 +96,8 @@ class PriorDistributionSampler:
         constants.EC_M: prior.ec_m.sample(**sample_kwargs),
         constants.ETA_M: prior.eta_m.sample(**sample_kwargs),
         constants.SLOPE_M: prior.slope_m.sample(**sample_kwargs),
+        constants.PEAK_DELAY_M: prior.peak_delay_m.sample(**sample_kwargs),
+        constants.EXPONENT_M: prior.exponent_m.sample(**sample_kwargs),
     }
     beta_gm_dev = tfp.distributions.Sample(
         tfp.distributions.Normal(0, 1),
@@ -126,6 +128,8 @@ class PriorDistributionSampler:
           alpha=media_vars[constants.ALPHA_M],
           ec=media_vars[constants.EC_M],
           slope=media_vars[constants.SLOPE_M],
+          peak_delay=media_vars[constants.PEAK_DELAY_M],
+          exponent=media_vars[constants.EXPONENT_M],
       )
       linear_predictor_counterfactual_difference = (
           mmm.linear_predictor_counterfactual_difference_media(
@@ -133,6 +137,8 @@ class PriorDistributionSampler:
               alpha_m=media_vars[constants.ALPHA_M],
               ec_m=media_vars[constants.EC_M],
               slope_m=media_vars[constants.SLOPE_M],
+              peak_delay_m=media_vars[constants.PEAK_DELAY_M],
+              exponent_m=media_vars[constants.EXPONENT_M],
           )
       )
       beta_m_value = mmm.calculate_beta_x(
@@ -189,6 +195,8 @@ class PriorDistributionSampler:
         constants.EC_RF: prior.ec_rf.sample(**sample_kwargs),
         constants.ETA_RF: prior.eta_rf.sample(**sample_kwargs),
         constants.SLOPE_RF: prior.slope_rf.sample(**sample_kwargs),
+        constants.PEAK_DELAY_RF: prior.peak_delay_rf.sample(**sample_kwargs),
+        constants.EXPONENT_RF: prior.exponent_rf.sample(**sample_kwargs),
     }
     beta_grf_dev = tfp.distributions.Sample(
         tfp.distributions.Normal(0, 1),
@@ -220,6 +228,8 @@ class PriorDistributionSampler:
           alpha=rf_vars[constants.ALPHA_RF],
           ec=rf_vars[constants.EC_RF],
           slope=rf_vars[constants.SLOPE_RF],
+          peak_delay=rf_vars[constants.PEAK_DELAY_RF],
+          exponent=rf_vars[constants.EXPONENT_RF],
       )
       linear_predictor_counterfactual_difference = (
           mmm.linear_predictor_counterfactual_difference_rf(
@@ -227,6 +237,8 @@ class PriorDistributionSampler:
               alpha_rf=rf_vars[constants.ALPHA_RF],
               ec_rf=rf_vars[constants.EC_RF],
               slope_rf=rf_vars[constants.SLOPE_RF],
+              peak_delay_rf=rf_vars[constants.PEAK_DELAY_RF],
+              exponent_rf=rf_vars[constants.EXPONENT_RF],
           )
       )
       beta_rf_value = mmm.calculate_beta_x(
@@ -308,6 +320,10 @@ class PriorDistributionSampler:
           alpha=organic_media_vars[constants.ALPHA_OM],
           ec=organic_media_vars[constants.EC_OM],
           slope=organic_media_vars[constants.SLOPE_OM],
+          peak_delay=organic_media_vars.get(constants.PEAK_DELAY_OM,
+                                             tf.zeros_like(organic_media_vars[constants.ALPHA_OM])),
+          exponent=organic_media_vars.get(constants.EXPONENT_OM,
+                                          tf.ones_like(organic_media_vars[constants.ALPHA_OM])),
       )
       beta_om_value = mmm.calculate_beta_x(
           is_non_media=False,
@@ -392,6 +408,10 @@ class PriorDistributionSampler:
           alpha=organic_rf_vars[constants.ALPHA_ORF],
           ec=organic_rf_vars[constants.EC_ORF],
           slope=organic_rf_vars[constants.SLOPE_ORF],
+          peak_delay=organic_rf_vars.get(constants.PEAK_DELAY_ORF,
+                                          tf.zeros_like(organic_rf_vars[constants.ALPHA_ORF])),
+          exponent=organic_rf_vars.get(constants.EXPONENT_ORF,
+                                       tf.ones_like(organic_rf_vars[constants.ALPHA_ORF])),
       )
       beta_orf_value = mmm.calculate_beta_x(
           is_non_media=False,

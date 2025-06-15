@@ -63,8 +63,7 @@ def _validate_arguments(
   if max_lag < 0:
     raise ValueError('`max_lag` must be non-negative.')
   # peak_delay non-negativity check (element-wise for tensor)
-  if tf.reduce_any(peak_delay < 0):
-      raise ValueError('All elements in `peak_delay` must be non-negative.')
+  tf.debugging.assert_greater_equal(peak_delay, tf.cast(0.0, peak_delay.dtype), message='All elements in `peak_delay` must be non-negative.')
 
 
 def _adstock(
@@ -154,13 +153,15 @@ def _adstock(
     window_list[i] = media[..., i:i+n_times_output, :]
   windowed = tf.stack(window_list)
 
-  lags = tf.range(tf.cast(window_size, dtype=tf.float32), dtype=tf.float32)
+  # Use media.dtype consistently throughout the function
+  target_dtype = media.dtype
+  lags = tf.range(tf.cast(window_size, dtype=target_dtype), dtype=target_dtype)
 
-  alpha_f = tf.cast(alpha, tf.float32)
-  peak_delay_f = tf.cast(peak_delay_tensor, tf.float32) # Now a tensor [..., C]
-  exponent_f = tf.cast(exponent_tensor, tf.float32)
+  alpha_f = tf.cast(alpha, target_dtype)
+  peak_delay_f = tf.cast(peak_delay_tensor, target_dtype) # Now a tensor [..., C]
+  exponent_f = tf.cast(exponent_tensor, target_dtype)
 
-  epsilon = 1e-6
+  epsilon = tf.cast(1e-6, target_dtype)
   exponent_safe = tf.maximum(exponent_f, epsilon)
 
   lags_bcast = tf.reshape(lags, [1] * len(alpha_f.shape) + [-1])
@@ -174,7 +175,6 @@ def _adstock(
 
   sum_weights = tf.reduce_sum(weights, axis=-1, keepdims=True)
   weights = tf.divide(weights, tf.maximum(sum_weights, epsilon))
-  weights = tf.cast(weights, media.dtype)
 
   return tf.einsum('...cw,w...gtc->...gtc', weights, windowed)
 
@@ -229,8 +229,7 @@ class AdstockTransformer(AdstockHillTransformer):
             raise ValueError('`peak_delay` must be non-negative.')
         self._peak_delay = tf.fill(alpha.shape, tf.constant(peak_delay, dtype=alpha.dtype)) # Match alpha shape
     else:
-        if tf.reduce_any(tf.cast(peak_delay, tf.float32) < 0): # Cast to float for comparison if it's uint etc.
-            raise ValueError('All elements in `peak_delay` must be non-negative.')
+        tf.debugging.assert_greater_equal(peak_delay, tf.cast(0.0, peak_delay.dtype), message='All elements in `peak_delay` must be non-negative.')
         self._peak_delay = tf.cast(peak_delay, dtype=alpha.dtype)
     # Ensure self._peak_delay has same rank and compatible shape as alpha for _adstock
     if self._peak_delay.shape == tf.TensorShape([]):

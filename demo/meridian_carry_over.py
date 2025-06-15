@@ -241,10 +241,10 @@ def train_models(data, model_specs, quick_mode=True):
     # 高速モード用のパラメータ
     if quick_mode:
         n_chains = 4
-        n_adapt = 500
-        n_burnin = 250
-        n_keep = 500
-        prior_samples = 250
+        n_adapt = 50
+        n_burnin = 50
+        n_keep = 50
+        prior_samples = 50
     else:
         n_chains = 10
         n_adapt = 2000
@@ -255,31 +255,26 @@ def train_models(data, model_specs, quick_mode=True):
     for name, model_spec in model_specs.items():
         print(f"\n--- {name} モデルの訓練開始 ---")
 
-        try:
-            # Meridianモデルの初期化
-            mmm = model.Meridian(input_data=data, model_spec=model_spec)
+        # Meridianモデルの初期化
+        mmm = model.Meridian(input_data=data, model_spec=model_spec)
 
-            # 事前分布からのサンプリング
-            print("事前分布からサンプリング中...")
-            mmm.sample_prior(prior_samples)
+        # 事前分布からのサンプリング
+        print("事前分布からサンプリング中...")
+        mmm.sample_prior(prior_samples)
 
-            # 事後分布からのサンプリング
-            print("事後分布からサンプリング中...")
-            mmm.sample_posterior(
-                n_chains=n_chains,
-                n_adapt=n_adapt,
-                n_burnin=n_burnin,
-                n_keep=n_keep,
-                seed=42
-            )
+        # 事後分布からのサンプリング
+        print("事後分布からサンプリング中...")
+        mmm.sample_posterior(
+            n_chains=n_chains,
+            n_adapt=n_adapt,
+            n_burnin=n_burnin,
+            n_keep=n_keep,
+            seed=42
+        )
 
-            models[name] = mmm
-            print(f"{name} モデルの訓練完了")
+        models[name] = mmm
+        print(f"{name} モデルの訓練完了")
 
-        except Exception as e:
-            print(f"モデル訓練エラー: {e}")
-            print(f"{name} モデルの訓練をスキップします")
-            continue
 
     print(f"\n全{len(models)}モデルの訓練が完了しました。")
     return models
@@ -299,25 +294,21 @@ def analyze_convergence(models):
         model_diagnostics = visualizer.ModelDiagnostics(mmm)
 
         # R-hat値の取得（可視化なしで統計のみ）
-        try:
-            # R-hat統計量の表示
-            print("R-hat統計量（1.0に近いほど良好な収束）:")
+        # R-hat統計量の表示
+        print("R-hat統計量（1.0に近いほど良好な収束）:")
 
-            # 主要パラメータのR-hat値を確認
-            rhat_summary = model_diagnostics._get_rhat_summary()
-            if rhat_summary is not None:
-                print(f"  平均R-hat: {rhat_summary.get('avg_rhat', 'N/A'):.3f}")
-                print(f"  最大R-hat: {rhat_summary.get('max_rhat', 'N/A'):.3f}")
-                print(f"  不良R-hat割合: {rhat_summary.get('percent_bad_rhat', 'N/A'):.1f}%")
+        # 主要パラメータのR-hat値を確認
+        rhat_summary = model_diagnostics._get_rhat_summary()
+        if rhat_summary is not None:
+            print(f"  平均R-hat: {rhat_summary.get('avg_rhat', 'N/A'):.3f}")
+            print(f"  最大R-hat: {rhat_summary.get('max_rhat', 'N/A'):.3f}")
+            print(f"  不良R-hat割合: {rhat_summary.get('percent_bad_rhat', 'N/A'):.1f}%")
 
-                convergence_results[name] = rhat_summary
-            else:
-                print("  R-hat統計量を取得できませんでした")
-                convergence_results[name] = None
-
-        except Exception as e:
-            print(f"  収束性分析でエラー: {e}")
+            convergence_results[name] = rhat_summary
+        else:
+            print("  R-hat統計量を取得できませんでした")
             convergence_results[name] = None
+
 
     return convergence_results
 
@@ -368,31 +359,27 @@ def analyze_media_effects(models):
     for name, mmm in models.items():
         print(f"\n--- {name} モデルのメディア効果 ---")
 
-        try:
-            # Analyzerを使用してメディア効果を分析
-            mmm_analyzer = analyzer.Analyzer(mmm)
+        # Analyzerを使用してメディア効果を分析
+        mmm_analyzer = analyzer.Analyzer(mmm)
 
-            # ROI分析
-            roi_result = mmm_analyzer.roi()
-            if roi_result is not None:
-                print("ROI分析結果:")
-                roi_df = roi_result.to_dataframe()
-                print(roi_df.round(3))
+        # ROI分析
+        roi_result = mmm_analyzer.roi()
+        if roi_result is not None:
+            print("ROI分析結果:")
+            roi_df = roi_result.to_dataframe()
+            print(roi_df.round(3))
 
-                # 拡張アドストックパラメータの分析
-                adstock_params = analyze_enhanced_adstock_parameters(mmm)
+            # 拡張アドストックパラメータの分析
+            adstock_params = analyze_enhanced_adstock_parameters(mmm)
 
-                media_effects[name] = {
-                    'roi': roi_df,
-                    'adstock_params': adstock_params
-                }
-            else:
-                print("  ROI分析結果を取得できませんでした")
-                media_effects[name] = None
-
-        except Exception as e:
-            print(f"  メディア効果分析でエラー: {e}")
+            media_effects[name] = {
+                'roi': roi_df,
+                'adstock_params': adstock_params
+            }
+        else:
+            print("  ROI分析結果を取得できませんでした")
             media_effects[name] = None
+
 
     return media_effects
 
@@ -402,59 +389,54 @@ def analyze_enhanced_adstock_parameters(mmm):
     """
     adstock_results = {}
 
-    try:
-        # 事後分布から拡張アドストックパラメータを取得
-        if hasattr(mmm.inference_data, 'posterior'):
-            posterior = mmm.inference_data.posterior
+    # 事後分布から拡張アドストックパラメータを取得
+    if hasattr(mmm.inference_data, 'posterior'):
+        posterior = mmm.inference_data.posterior
 
-            # Peak delay パラメータの分析
-            if constants.PEAK_DELAY_M in posterior.data_vars:
-                peak_delay_samples = posterior[constants.PEAK_DELAY_M]
-                peak_delay_mean = peak_delay_samples.mean(['chain', 'draw']).values
-                peak_delay_std = peak_delay_samples.std(['chain', 'draw']).values
+        # Peak delay パラメータの分析
+        if constants.PEAK_DELAY_M in posterior.data_vars:
+            peak_delay_samples = posterior[constants.PEAK_DELAY_M]
+            peak_delay_mean = peak_delay_samples.mean(['chain', 'draw']).values
+            peak_delay_std = peak_delay_samples.std(['chain', 'draw']).values
 
-                print("Peak Delay パラメータ:")
-                for i, (mean_val, std_val) in enumerate(zip(peak_delay_mean, peak_delay_std)):
-                    print(f"  チャンネル {i}: {mean_val:.2f} ± {std_val:.2f} 週")
+            print("Peak Delay パラメータ:")
+            for i, (mean_val, std_val) in enumerate(zip(peak_delay_mean, peak_delay_std)):
+                print(f"  チャンネル {i}: {mean_val:.2f} ± {std_val:.2f} 週")
 
-                adstock_results['peak_delay'] = {
-                    'mean': peak_delay_mean,
-                    'std': peak_delay_std
-                }
+            adstock_results['peak_delay'] = {
+                'mean': peak_delay_mean,
+                'std': peak_delay_std
+            }
 
-            # Exponent パラメータの分析
-            if constants.EXPONENT_M in posterior.data_vars:
-                exponent_samples = posterior[constants.EXPONENT_M]
-                exponent_mean = exponent_samples.mean(['chain', 'draw']).values
-                exponent_std = exponent_samples.std(['chain', 'draw']).values
+        # Exponent パラメータの分析
+        if constants.EXPONENT_M in posterior.data_vars:
+            exponent_samples = posterior[constants.EXPONENT_M]
+            exponent_mean = exponent_samples.mean(['chain', 'draw']).values
+            exponent_std = exponent_samples.std(['chain', 'draw']).values
 
-                print("Exponent パラメータ:")
-                for i, (mean_val, std_val) in enumerate(zip(exponent_mean, exponent_std)):
-                    print(f"  チャンネル {i}: {mean_val:.2f} ± {std_val:.2f}")
+            print("Exponent パラメータ:")
+            for i, (mean_val, std_val) in enumerate(zip(exponent_mean, exponent_std)):
+                print(f"  チャンネル {i}: {mean_val:.2f} ± {std_val:.2f}")
 
-                adstock_results['exponent'] = {
-                    'mean': exponent_mean,
-                    'std': exponent_std
-                }
+            adstock_results['exponent'] = {
+                'mean': exponent_mean,
+                'std': exponent_std
+            }
 
-            # Alpha パラメータの分析
-            if constants.ALPHA_M in posterior.data_vars:
-                alpha_samples = posterior[constants.ALPHA_M]
-                alpha_mean = alpha_samples.mean(['chain', 'draw']).values
-                alpha_std = alpha_samples.std(['chain', 'draw']).values
+        # Alpha パラメータの分析
+        if constants.ALPHA_M in posterior.data_vars:
+            alpha_samples = posterior[constants.ALPHA_M]
+            alpha_mean = alpha_samples.mean(['chain', 'draw']).values
+            alpha_std = alpha_samples.std(['chain', 'draw']).values
 
-                print("Alpha パラメータ:")
-                for i, (mean_val, std_val) in enumerate(zip(alpha_mean, alpha_std)):
-                    print(f"  チャンネル {i}: {mean_val:.3f} ± {std_val:.3f}")
+            print("Alpha パラメータ:")
+            for i, (mean_val, std_val) in enumerate(zip(alpha_mean, alpha_std)):
+                print(f"  チャンネル {i}: {mean_val:.3f} ± {std_val:.3f}")
 
-                adstock_results['alpha'] = {
-                    'mean': alpha_mean,
-                    'std': alpha_std
-                }
-
-    except Exception as e:
-        print(f"  拡張アドストックパラメータ分析でエラー: {e}")
-        return None
+            adstock_results['alpha'] = {
+                'mean': alpha_mean,
+                'std': alpha_std
+            }
 
     return adstock_results
 

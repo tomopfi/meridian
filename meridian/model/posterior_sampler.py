@@ -149,6 +149,8 @@ class PosteriorMCMCSampler:
         ec_m = yield prior_broadcast.ec_m
         eta_m = yield prior_broadcast.eta_m
         slope_m = yield prior_broadcast.slope_m
+        peak_delay_m = yield prior_broadcast.peak_delay_m
+        exponent_m = yield prior_broadcast.exponent_m
         beta_gm_dev = yield tfp.distributions.Sample(
             tfp.distributions.Normal(0, 1),
             [n_geos, n_media_channels],
@@ -159,6 +161,8 @@ class PosteriorMCMCSampler:
             alpha=alpha_m,
             ec=ec_m,
             slope=slope_m,
+            peak_delay=peak_delay_m,
+            exponent=exponent_m,
         )
         prior_type = mmm.model_spec.effective_media_prior_type
         if prior_type == constants.TREATMENT_PRIOR_TYPE_COEFFICIENT:
@@ -181,6 +185,8 @@ class PosteriorMCMCSampler:
                   alpha_m=alpha_m,
                   ec_m=ec_m,
                   slope_m=slope_m,
+                  peak_delay_m=peak_delay_m,
+                  exponent_m=exponent_m,
               )
           )
           beta_m_value = mmm.calculate_beta_x(
@@ -213,6 +219,8 @@ class PosteriorMCMCSampler:
         ec_rf = yield prior_broadcast.ec_rf
         eta_rf = yield prior_broadcast.eta_rf
         slope_rf = yield prior_broadcast.slope_rf
+        peak_delay_rf = yield prior_broadcast.peak_delay_rf
+        exponent_rf = yield prior_broadcast.exponent_rf
         beta_grf_dev = yield tfp.distributions.Sample(
             tfp.distributions.Normal(0, 1),
             [n_geos, n_rf_channels],
@@ -224,6 +232,8 @@ class PosteriorMCMCSampler:
             alpha=alpha_rf,
             ec=ec_rf,
             slope=slope_rf,
+            peak_delay=peak_delay_rf,
+            exponent=exponent_rf,
         )
 
         prior_type = mmm.model_spec.effective_rf_prior_type
@@ -247,6 +257,8 @@ class PosteriorMCMCSampler:
                   alpha_rf=alpha_rf,
                   ec_rf=ec_rf,
                   slope_rf=slope_rf,
+                  peak_delay_rf=peak_delay_rf,
+                  exponent_rf=exponent_rf,
               )
           )
           beta_rf_value = mmm.calculate_beta_x(
@@ -289,6 +301,8 @@ class PosteriorMCMCSampler:
             alpha=alpha_om,
             ec=ec_om,
             slope=slope_om,
+            peak_delay=tf.zeros_like(alpha_om),
+            exponent=tf.ones_like(alpha_om),
         )
         prior_type = mmm.model_spec.organic_media_prior_type
         if prior_type == constants.TREATMENT_PRIOR_TYPE_COEFFICIENT:
@@ -339,6 +353,8 @@ class PosteriorMCMCSampler:
             alpha=alpha_orf,
             ec=ec_orf,
             slope=slope_orf,
+            peak_delay=tf.zeros_like(alpha_orf),
+            exponent=tf.ones_like(alpha_orf),
         )
 
         prior_type = mmm.model_spec.organic_rf_prior_type
